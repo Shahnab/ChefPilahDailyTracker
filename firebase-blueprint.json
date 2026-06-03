@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Tracker": {
+      "title": "Tracker",
+      "description": "A shared tracker for Chef Pilah",
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "object",
+          "description": "Monthly targets, keyed by month YYYY-MM"
+        },
+        "config": {
+          "type": "object",
+          "description": "General config like packets_per_litre"
+        }
+      }
+    },
+    "Log": {
+      "title": "Log",
+      "description": "A daily log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "city": { "type": "string" },
+        "packets": { "type": "number" },
+        "litres": { "type": "number" },
+        "revenue": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/trackers/{trackerId}": {
+      "schema": "Tracker",
+      "description": "The shared tracker, document ID is the hashed password"
+    },
+    "/trackers/{trackerId}/logs/{logId}": {
+      "schema": "Log",
+      "description": "Individual log entries for this tracker"
+    }
+  }
+}
