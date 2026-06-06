@@ -118,17 +118,17 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>("2026-06");
   const [selectedCityFilter, setSelectedCityFilter] = useState<string>("All");
 
-  const [target, setTarget] = useState<TargetData>({ packets: 2224, litres: +(2224/13).toFixed(2) });
+  const [target, setTarget] = useState<TargetData>({ packets: 2224, litres: +(2224/2).toFixed(2) });
   const [targetsMap, setTargetsMap] = useState<Record<string, TargetData>>({});
   const [logs, setLogs] = useState<LogData[]>([]);
-  const [config, setConfig] = useState({ packets_per_litre: 13, vnd_per_packet: 48000 });
+  const [config, setConfig] = useState({ packets_per_litre: 2, vnd_per_packet: 48000 });
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   // Fallback defaults
   const DEFAULTS = {
     targets: {},
     logs: [],
-    config: { packets_per_litre: 13, vnd_per_packet: 48000 }
+    config: { packets_per_litre: 2, vnd_per_packet: 48000 }
   };
   
   // Real-time listener for Firebase data
@@ -150,13 +150,21 @@ export default function App() {
       } else {
          const data = snapshot.data();
          
-         const loadedConfig = data.config || DEFAULTS.config;
+         const rawConfig = data.config || DEFAULTS.config;
+         // Override old default (13) with current default (2) in local state.
+         // Firebase value gets corrected next time user saves via Edit.
+         const ppl = rawConfig.packets_per_litre === 13 ? 2 : (rawConfig.packets_per_litre || 2);
+         const loadedConfig = { ...rawConfig, packets_per_litre: ppl };
          setConfig(loadedConfig);
          
          const loadedTargets = data.targets || {};
          setTargetsMap(loadedTargets);
          
-         setTarget(loadedTargets[selectedMonth] || { packets: 2224, litres: +(2224/loadedConfig.packets_per_litre).toFixed(2) });
+         const storedTarget = loadedTargets[selectedMonth];
+         setTarget(storedTarget
+           ? { packets: storedTarget.packets, litres: +(storedTarget.packets / ppl).toFixed(2) }
+           : { packets: 2224, litres: +(2224 / ppl).toFixed(2) }
+         );
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, trackerRef.path);
@@ -235,7 +243,7 @@ export default function App() {
   const [targetUnit, setTargetUnit] = useState<"packets" | "litres">("packets");
   
   const [isEditingConfig, setIsEditingConfig] = useState(false);
-  const [tempConfigPpl, setTempConfigPpl] = useState<string>("13");
+  const [tempConfigPpl, setTempConfigPpl] = useState<string>("2");
   const [tempConfigVpp, setTempConfigVpp] = useState<string>("48000");
 
   // Log Entry
@@ -249,7 +257,12 @@ export default function App() {
   const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setTarget(targetsMap[selectedMonth] || { packets: 2224, litres: +(2224/config.packets_per_litre).toFixed(2) });
+    const ppl = config.packets_per_litre || 2;
+    const storedTarget = targetsMap[selectedMonth];
+    setTarget(storedTarget
+      ? { packets: storedTarget.packets, litres: +(storedTarget.packets / ppl).toFixed(2) }
+      : { packets: 2224, litres: +(2224 / ppl).toFixed(2) }
+    );
   }, [selectedMonth, targetsMap, config.packets_per_litre]);
 
   const handleUpdateTarget = () => {
@@ -265,9 +278,10 @@ export default function App() {
   const handleUpdateConfig = () => {
     const ppl = parseFloat(tempConfigPpl);
     const vpp = parseFloat(tempConfigVpp);
-    if (isNaN(ppl) || isNaN(vpp)) return;
+    if (isNaN(ppl) || isNaN(vpp) || ppl <= 0) return;
     
     const newConfig = { packets_per_litre: ppl, vnd_per_packet: vpp };
+    setConfig(newConfig);
     saveToFirebase({ config: newConfig });
     setIsEditingConfig(false);
   };
@@ -358,7 +372,7 @@ export default function App() {
   }, [logs, selectedMonth, selectedCityFilter]);
 
   const totalPackets = filteredLogs.reduce((sum, log) => sum + log.packets, 0);
-  const totalLitres = filteredLogs.reduce((sum, log) => sum + log.litres, 0);
+  const totalLitres = +((totalPackets / (config.packets_per_litre || 2)).toFixed(2));
   const totalRevenue = filteredLogs.reduce((sum, log) => sum + log.revenue, 0);
   
   // Calculate remaining from overall or filtered? Let's assume the target applies to the selected timeline/month
@@ -381,7 +395,7 @@ export default function App() {
       const existing = logsMap.get(log.date) || { packets: 0, litres: 0 };
       logsMap.set(log.date, { 
         packets: existing.packets + log.packets, 
-        litres: existing.litres + log.litres 
+        litres: 0 
       });
     });
 
@@ -392,11 +406,11 @@ export default function App() {
             date: format(d, "MMM dd"),
             originalDate: dStr,
             packets: log ? log.packets : 0,
-            litres: log ? log.litres : 0,
+            litres: log ? +(log.packets / (config.packets_per_litre || 2)).toFixed(2) : 0,
         });
     }
     return data;
-  }, [filteredLogs, selectedMonth]);
+  }, [filteredLogs, selectedMonth, config.packets_per_litre]);
 
   // Export to PDF
   const exportPDF = async () => {
